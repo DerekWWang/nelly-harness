@@ -1,0 +1,8 @@
+{"request_id":1,"speculative":true,"call":{"tool":"notes_get","topic":"people","name":"Ada"}}
+{"request_id":2,"call":{"tool":"notes_get","topic":"people","name":"Ada"}}
+{"request_id":3,"call":{"tool":"notes_put","topic":"people","name":"Ada","note":"Prefers tea. Ask about the compiler project."}}
+{"request_id":4,"call":{"tool":"notes_get","topic":"people","name":"Ada"}}
+{"request_id":5,"call":{"tool":"schedule_create","title":"Call Ada","start_minute":30000000,"end_minute":30000030}}
+{"request_id":6,"speculative":true,"call":{"tool":"schedule_is_free","start_minute":30000015,"end_minute":30000045}}
+{"request_id":7,"speculative":true,"call":{"tool":"schedule_first_free","start_minute":30000000,"end_minute":30000120,"duration_minutes":30}}
+{"request_id":8,"call":{"tool":"stats"}}

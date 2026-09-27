@@ -1,0 +1,21 @@
+{
+  "model_path": "weights.onnx",
+  "sample_rate_hz": 16000,
+  "chunk_samples": 320,
+  "input_name": "audio",
+  "output_name": "logits",
+  "intra_threads": 1,
+  "min_confidence": 0.8,
+  "emit_on_change": true,
+  "actions": [
+    null,
+    {
+      "event": "prefetch",
+      "call": {
+        "tool": "notes_get",
+        "topic": "demo",
+        "name": "welcome"
+      }
+    }
+  ]
+}

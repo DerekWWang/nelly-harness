@@ -1,0 +1,27 @@
+[package]
+name = "nelly-harness"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Small local tool runtime for speculative voice agents"
+publish = false
+
+[features]
+default = []
+onnx = ["dep:ort"]
+
+[dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+fs2 = "0.4"
+ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["std", "load-dynamic", "api-24"] }
+
+[[bench]]
+name = "hot_path"
+harness = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

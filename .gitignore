@@ -1,0 +1,14 @@
+/target/
+/data/
+/examples/*.onnx
+__pycache__/
+
+
+.DS_Store
+.env
+.env.*
+!.env.example
+/models/
+/recordings/
+/nelly-memory/
+/*training.jsonl
