@@ -122,7 +122,7 @@ fn unknown_tools_and_fields_return_errors_without_stopping_stream() {
 fn all_function_schemas_include_read_classification() {
     let rows = run(&["tools"], &[]);
     let tools = rows[0].as_array().unwrap();
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 21);
     for tool in tools {
         assert!(tool["read_only"].is_boolean());
         assert!(tool["function"]["name"].is_string());

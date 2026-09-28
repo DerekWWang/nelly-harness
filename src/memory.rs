@@ -281,7 +281,11 @@ impl MemoryStore {
         if metadata.finished_at_ms.is_none() {
             return Err(invalid("finish the episode before syncing"));
         }
+        cli.check_consent(true)?;
         let trace = directory.join("memorable-trace.json");
+        // Reproject unsynced episodes written by older harness versions using
+        // the current adapter. The lossless episode remains immutable.
+        self.write_trace(&directory, &metadata)?;
         let output = cli.run([OsStr::new("ingest"), trace.as_os_str()])?;
         // Memorable can decline procedural extraction for read-only traces. The
         // acknowledgement means the CLI processed it, not necessarily stored it.
@@ -393,26 +397,17 @@ impl MemoryStore {
             serde_json::to_writer(&mut *output, &metadata.task_description)?;
             output.write_all(b",\"harness\":\"nelly-rust\",\"tool_calls\":[")?;
             let mut count = 0;
+            let mut written = 0;
             visit_steps(&directory.join("steps.jsonl"), |step| {
-                if count > 0 {
+                count += 1;
+                let Some(call) = crate::trace::project(&step) else {
+                    return Ok(());
+                };
+                if written > 0 {
                     output.write_all(b",")?;
                 }
-                #[derive(Serialize)]
-                struct ToolCall<'a> {
-                    name: &'a str,
-                    input: &'a Value,
-                    #[serde(skip_serializing_if = "Option::is_none")]
-                    result: Option<&'a Value>,
-                }
-                serde_json::to_writer(
-                    &mut *output,
-                    &ToolCall {
-                        name: &step.action.name,
-                        input: &step.action.input,
-                        result: step.result.as_ref(),
-                    },
-                )?;
-                count += 1;
+                serde_json::to_writer(&mut *output, &call)?;
+                written += 1;
                 Ok(())
             })?;
             output.write_all(b"]}\n")?;
@@ -617,7 +612,37 @@ impl MemorableCli {
                 "recall query must be 1..16384 bytes and cannot start with '-'",
             ));
         }
+        self.check_consent(false)?;
         self.run(["recall", query])
+    }
+
+    /// Assemble a dependency-ordered plan, including gaps in memory coverage.
+    /// Memorable derives artifact dependencies in the process's current directory.
+    pub fn chain(&self, query: &str) -> io::Result<CliOutput> {
+        if query.is_empty() || query.len() > 16 * 1024 || query.starts_with('-') {
+            return Err(invalid(
+                "chain query must be 1..16384 bytes and cannot start with '-'",
+            ));
+        }
+        self.check_consent(false)?;
+        self.run(["chain", query, "--json"])
+    }
+
+    /// Return revision groups as JSON. The pinned CLI includes every revision in
+    /// JSON mode; `all` also requests its explicit all-revisions flag.
+    pub fn list(&self, all: bool) -> io::Result<CliOutput> {
+        self.check_consent(false)?;
+        if all {
+            self.run(["list", "--json", "--all"])
+        } else {
+            self.run(["list", "--json"])
+        }
+    }
+
+    /// Inspect backend, consent, extraction service, and pending synchronization.
+    /// The pinned CLI exposes status as text, without a JSON output flag.
+    pub fn status(&self) -> io::Result<CliOutput> {
+        self.run(["status"])
     }
 
     pub fn show(&self, slug: &str) -> io::Result<CliOutput> {
@@ -630,7 +655,27 @@ impl MemorableCli {
         {
             return Err(invalid("expected a procedures/<slug> identifier"));
         }
+        self.check_consent(false)?;
         self.run(["show", slug])
+    }
+
+    /// Check the public status output because the pinned provider does not
+    /// consistently guard its retrieval paths. Unknown formats fail closed.
+    fn check_consent(&self, write: bool) -> io::Result<()> {
+        let status = self.status()?;
+        let mode = consent_mode(&status.stdout);
+        let allowed = match mode {
+            Some("read-write") => true,
+            Some("read-only") => !write,
+            _ => false,
+        };
+        if allowed {
+            return Ok(());
+        }
+        Err(io::Error::new(io::ErrorKind::PermissionDenied,format!(
+            "Memorable {} consent is {}; inspect `memory status` and configure the provider before retrying",
+            if write {"write"} else {"read"},mode.unwrap_or("unknown")
+        )))
     }
 
     fn run<I, S>(&self, args: I) -> io::Result<CliOutput>
@@ -732,6 +777,27 @@ impl MemorableCli {
         }
         Ok(output)
     }
+}
+
+fn consent_mode(status: &str) -> Option<&str> {
+    let mut modes = status.lines().filter_map(|line| {
+        let value = line.trim().strip_prefix("write consent")?.trim();
+        value
+            .strip_prefix(':')
+            .unwrap_or(value)
+            .split_whitespace()
+            .next()
+    });
+    let mode = modes.next();
+    if modes.next().is_some() {
+        None
+    } else {
+        mode
+    }
+}
+
+pub(crate) fn read_consent_allowed(status: &str) -> bool {
+    matches!(consent_mode(status), Some("read-only" | "read-write"))
 }
 
 fn terminate(child: &mut Child) {

@@ -1,12 +1,15 @@
 //! Nelly's synchronous, single-owner tool core. Embed this directly for the lowest
 //! overhead; JSONL transport, journaling, model inference and memory are adapters.
 pub mod audio;
+pub mod layered;
+pub mod layers;
 pub mod memory;
 pub mod model;
 pub mod notes;
 pub mod persistence;
 pub mod schedule;
 pub mod session;
+mod trace;
 
 use notes::Notes;
 use schedule::Schedule;
@@ -81,6 +84,28 @@ pub enum ToolCall {
     ScheduleDelete {
         id: u64,
     },
+    MemorableRecall {
+        query: String,
+    },
+    MemorableShow {
+        slug: String,
+    },
+    MemorableChain {
+        query: String,
+    },
+    MemorableList {
+        #[serde(default)]
+        all: bool,
+    },
+    MemorableStatus,
+    MemorableIngest {
+        episode_id: String,
+    },
+    MemorablePoll {
+        job_id: u64,
+    },
+    MemorableInvalidate,
+    MemorableDisable,
     Stats,
 }
 
@@ -93,6 +118,25 @@ impl ToolCall {
                 | Self::ScheduleCreate { .. }
                 | Self::ScheduleUpdate { .. }
                 | Self::ScheduleDelete { .. }
+                | Self::MemorableIngest { .. }
+                | Self::MemorableInvalidate
+                | Self::MemorableDisable
+        )
+    }
+
+    /// Routed to a background adapter; never evaluated or cached by the core.
+    pub fn is_memorable(&self) -> bool {
+        matches!(
+            self,
+            Self::MemorableRecall { .. }
+                | Self::MemorableShow { .. }
+                | Self::MemorableChain { .. }
+                | Self::MemorableList { .. }
+                | Self::MemorableStatus
+                | Self::MemorableIngest { .. }
+                | Self::MemorablePoll { .. }
+                | Self::MemorableInvalidate
+                | Self::MemorableDisable
         )
     }
 
@@ -109,6 +153,15 @@ impl ToolCall {
             Self::ScheduleCreate { .. } => "schedule_create",
             Self::ScheduleUpdate { .. } => "schedule_update",
             Self::ScheduleDelete { .. } => "schedule_delete",
+            Self::MemorableRecall { .. } => "memorable_recall",
+            Self::MemorableShow { .. } => "memorable_show",
+            Self::MemorableChain { .. } => "memorable_chain",
+            Self::MemorableList { .. } => "memorable_list",
+            Self::MemorableStatus => "memorable_status",
+            Self::MemorableIngest { .. } => "memorable_ingest",
+            Self::MemorablePoll { .. } => "memorable_poll",
+            Self::MemorableInvalidate => "memorable_invalidate",
+            Self::MemorableDisable => "memorable_disable",
             Self::Stats => "stats",
         }
     }
@@ -244,6 +297,11 @@ impl Harness {
     /// Prefetch calls use the same cache key as later committed reads. A write
     /// cannot be executed speculatively, even if emitted by a model in error.
     pub fn execute(&mut self, call: &ToolCall, speculative: bool) -> Result<ToolResult, String> {
+        if call.is_memorable() {
+            return Err(
+                "Memorable tools require LayeredExecutor with memory enabled (--memorable)".into(),
+            );
+        }
         if speculative && !call.is_read() {
             return Err("speculative writes are forbidden".into());
         }
@@ -319,6 +377,7 @@ impl Harness {
                 "events":self.schedule.len(),"bitmap_bytes":self.schedule.bitmap_bytes(),
                 "cached_reads":self.cache.entries.len(),"cache_payload_bytes":self.cache.bytes})
             }
+            _ => return Err("Memorable calls must use the background memory adapter".into()),
         };
         let value = Arc::new(value);
         if call.is_read() {

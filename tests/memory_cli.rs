@@ -33,7 +33,7 @@ impl Sandbox {
         let path = self
             .0
             .join(format!("fake-cli-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
-        fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+        fs::write(&path, format!("#!/bin/sh\nif [ \"$1\" = status ]; then printf 'write consent: read-write\\n'; exit 0; fi\n{script}\n")).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
         MemorableCli {
             program: path.into_os_string(),
@@ -117,7 +117,7 @@ fn durable_audio_pair_export_and_official_trace_schema() {
     assert_eq!(trace["harness"], "nelly-rust");
     assert_eq!(
         trace["tool_calls"][0],
-        json!({"name":"notes.create", "input":{"topic":"garden","body":"water basil"}, "result":{"created":true}})
+        json!({"name":"notes.create", "input":{"topic":"garden","body":"water basil","description":"notes.create topic=\"garden\""}, "result":{"created":true}})
     );
     assert!(trace.get("audio").is_none());
 }

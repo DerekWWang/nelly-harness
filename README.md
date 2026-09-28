@@ -11,7 +11,7 @@ the cheapest calls, or run the JSONL executable. Rust 1.88+ is required.
 - A durable mutation journal with one process owning each data directory.
 - A local model interface, optional native ONNX inference, and PCM16 WAV replay.
 - Owned episode audio, long-form summaries, state/action/result JSONL, training
-  exports, and an explicit Memorable CLI adapter.
+  exports, and Memorable's trace/synthesis/graph/retrieval layers.
 
 ## Run
 
@@ -21,6 +21,7 @@ cargo build --release
 target/release/nelly-harness serve --ephemeral < examples/tools.jsonl
 target/release/nelly-harness serve --data ./data
 target/release/nelly-harness tools
+target/release/nelly-harness serve --data ./data --memorable
 ```
 
 `serve` reads one request per line and flushes one response per line. It defaults
@@ -131,6 +132,13 @@ trace. Sync is explicit, uses a pinned CLI, retains data after failures, and
 requires the user's configured Memorable account. No remote service is needed
 for notes, scheduling, inference, or local episode export.
 
+`--memorable` enables model-callable background recall, procedure inspection,
+workflow chaining, and ingestion of finished episodes. Cold calls return pending
+jobs; `memorable_poll` or a repeated read retrieves completion. A bounded TTL
+cache keeps repeat retrievals local, while notes/calendar reads bypass the worker.
+The [layer guide](MEMORY.md#four-connected-layers) covers the protocol, limits,
+access controls, and the provider's custom-voice-workflow synthesis limitation.
+
 ```sh
 npx --yes --package memorable-cli@0.5.30 memorable login
 npx --yes --package memorable-cli@0.5.30 memorable enable
@@ -148,22 +156,23 @@ payload is 736 KiB; map nodes, strings, model memory and allocator overhead are
 additional. Queries allocate nothing for borrowed note lookup and bitmap
 availability; sorted/paginated listings allocate references plus returned rows.
 
-Initial release measurements on an Apple M4 Pro (2026-09-27):
+Release measurements on an Apple M4 Pro (2026-09-27):
 
 | Operation | Mean time |
 | --- | ---: |
-| Borrowed note lookup, 1,000 notes | 21.5 ns |
-| Bitmap availability, 30-minute interval | 3.9 ns |
-| First free hour in a 30-day window | 7.9 ns |
-| Cached typed tool dispatch | 19.9 ns |
-| JSON parse + cached dispatch + result serialization | 268.8 ns |
+| Borrowed note lookup, 1,000 notes | 22.4 ns |
+| Bitmap availability, 30-minute interval | 4.0 ns |
+| First free hour in a 30-day window | 8.8 ns |
+| Cached typed tool dispatch | 21.5 ns |
+| JSON parse + cached dispatch + result serialization | 256.0 ns |
 
 These microbenchmarks exercise warm in-process operations and exclude transport,
 disk sync, cold caches, inference, and Memorable. Only the explicitly labeled JSON
 row includes parsing and serialization.
 They are measurements of specific inputs, not end-to-end latency promises. The
-default release binary was about 889 KiB, with 1.59 MiB maximum RSS reported
-by macOS `time -l` for the eight-request ephemeral example. Binary/OS/runtime
+default release binary was about 1.03 MiB, with 1.66 MiB maximum RSS reported
+by macOS `time -l` for the eight-request ephemeral example with the optional
+memory worker disabled. Binary/OS/runtime
 versions and model weights change the footprint substantially. Reproduce:
 
 ```sh
